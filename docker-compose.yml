@@ -1,0 +1,14 @@
+services:
+  emoify-frontend:
+    build:
+      context: ./DesktopApp/Frontend/JavaFXApplication_EMOFI
+      dockerfile: Dockerfile
+    container_name: emoify_frontend
+    image: emoify-frontend:latest
+    environment:
+      # Replace with your actual Windows host IP (Wi-Fi/Ethernet adapter)
+      - DISPLAY=192.168.1.212:0
+    devices:
+      - /dev/dri:/dev/dri   # optional, mostly for Linux GPU acceleration
+    stdin_open: true
+    tty: true
