@@ -2,7 +2,15 @@
 import sqlite3
 import os
 from typing import List, Tuple
-DB_PATH = r"assets\app.db"
+import uuid
+
+current_dir = os.path.dirname(os.path.abspath(__file__))  # C:/project/database
+
+# Navigate up one level and then into assets
+db_path = os.path.join(current_dir, '..', 'assets', 'app.db')
+
+# Normalize the path (handles the ..)
+DB_PATH = os.path.normpath(db_path)
 
 def initialize_db():
     if not os.path.exists("assets"):
@@ -51,6 +59,37 @@ def get_user_by_id(user_id: int):
     conn.close()
     return user
 
+def create_new_user_database(username: str, phonenumber: str, birthday: str):
+    user_id = 1
+    session_id = str(uuid.uuid4())
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO users (id, username, phonenumber, birthday, session_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (user_id, username, phonenumber, birthday, session_id))
+    conn.commit()
+    conn.close()
+
+def get_user_by_id(user_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+def check_user_by_id(user_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if(user):
+        return user
+    return None
+
 def get_user_by_credentials(username: str, password: str):
     conn = get_connection()
     cursor = conn.cursor()
@@ -71,6 +110,33 @@ def app_settings(conn):
     """
     conn.execute(query)
     conn.commit()
+
+def get_app_setting(setting_name, default_value):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT setting_value FROM app_settings WHERE setting_name = ?", (setting_name,))
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        try:
+            return int(result[0])
+        except ValueError:
+            return default_value
+    return default_value
+
+def initial_settings():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO app_settings (user_id, setting_name, setting_value) VALUES (?, ?, ?)", (1, "theme", "light"))
+    cursor.execute("INSERT INTO app_settings (user_id, setting_name, setting_value) VALUES (?, ?, ?)", (1, "systemDisable", "0"))
+    cursor.execute("INSERT INTO app_settings (user_id, setting_name, setting_value) VALUES (?, ?, ?)", (1, "recommendationTime", "30"))
+    cursor.execute("INSERT INTO app_settings (user_id, setting_name, setting_value) VALUES (?, ?, ?)", (1, "resetTime", "50"))
+    cursor.execute("INSERT INTO app_settings (user_id, setting_name, setting_value) VALUES (?, ?, ?)", (1, "appExecuteTime", "60"))
+    cursor.execute("INSERT INTO app_settings (user_id, setting_name, setting_value) VALUES (?, ?, ?)", (1, "soundLevel", "2"))
+    cursor.execute("INSERT INTO app_settings (user_id, setting_name, setting_value) VALUES (?, ?, ?)", (1, "focusDetection", "0"))
+    cursor.execute("INSERT INTO app_settings (user_id, setting_name, setting_value) VALUES (?, ?, ?)", (1, "handDetection", "0"))
+    conn.commit()
+    conn.close()
 
 def agent_recommendations(conn):
     query = """
@@ -96,7 +162,6 @@ def add_agent_recommendations(conn, user_id, recommendation_type, recommed_app, 
     """, (user_id, recommendation_type, recommed_app, app_url, search_query, is_local))
     print(f"[Info] Added agent recommendation for user {user_id}: {recommed_app}")
     conn.commit()
-
 
 def recommendation_history(conn):
     query = """
@@ -139,6 +204,7 @@ def emotions(conn):
     """
     conn.execute(query)
     conn.commit()
+
 def apps(conn):
     query = """
     CREATE TABLE IF NOT EXISTS apps (
@@ -150,7 +216,19 @@ def apps(conn):
         app_url TEXT,
         path TEXT,
         is_local BOOLEAN NOT NULL,
+        is_available BOOLEAN NOT NULL,
         FOREIGN KEY (user_id) REFERENCES users (id)
+    );
+    """
+    conn.execute(query)
+    conn.commit()
+
+def emotions(conn):
+    query = """
+    CREATE TABLE IF NOT EXISTS emotions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        emotion TEXT NOT NULL,
+        is_positive BOOLEAN NOT NULL
     );
     """
     conn.execute(query)
@@ -177,12 +255,35 @@ def add_emotions(conn):
     conn.commit()
 
 def add_app_data(conn, user_id, category, app_name, app_url, path, is_local):
+    is_available = True
     cursor = conn.cursor()
     cursor.execute("""
-            INSERT INTO apps (user_id, category, app_name, app_url, path, is_local)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (user_id, category, app_name, app_url, path, is_local))
+            INSERT INTO apps (user_id, category, app_name, app_url, path, is_local, is_available)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, category, app_name, app_url, path, is_local, is_available))
     conn.commit()
+
+# get app_type, app_name and app_id only
+def get_app_data(conn, app_name):
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT app_name, path
+        FROM apps
+        WHERE app_name = ? AND is_local = 1
+    """, (app_name,))
+    row = cursor.fetchone()
+
+    if row:
+        return {
+            "name": row[0],
+            "path": row[1]
+        }
+    else:
+        return {
+            "name": app_name,
+            "path": None
+        }
+
 
 def delete_app_data(conn, app_id: int):
     """
@@ -194,6 +295,7 @@ def delete_app_data(conn, app_id: int):
     cursor = conn.cursor()
     cursor.execute("DELETE FROM apps WHERE id = ?", (app_id,))
     conn.commit()
+
 
 def add_initial_apps(conn):
     """
