@@ -44,3 +44,5 @@ def detect_hand(frame, yolo_conf: float = 0.3, conf_thres: float = 0.5, min_pers
                 return [HAND_CLASSES[idx]]
 
     return []
+
+
