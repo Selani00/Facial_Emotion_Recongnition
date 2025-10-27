@@ -257,10 +257,10 @@ class AppController:
         recent_hands = list(self.hand_log)[-n_hands:]
 
         return recent_emotions + recent_hands
-
+    
+    # Series running
     def run(self):
         self.log(f"[INFO] GPU Available: {torch.cuda.is_available()}")
-
         self._warmup_models()
 
         try:
@@ -270,18 +270,16 @@ class AppController:
                 except Empty:
                     continue
 
-                now = time.time()
-
                 if frame is None or frame.size == 0:
                     self.log("[WARN] Empty frame.")
-                    time.sleep(0.01)
                     continue
 
+                now = time.time()
                 if self.agent_mode:
                     time.sleep(0.01)
                     continue
 
-                # Human detection
+                # Detect if a human is present
                 try:
                     detected = human_present(frame)
                 except Exception as e:
@@ -291,12 +289,11 @@ class AppController:
                 if not detected:
                     if now - self.last_seen >= self.focus_time:
                         self.log(f"[WARN] No human detected for {self.focus_time}s.")
-                    time.sleep(0.01)
                     continue
 
                 self.last_seen = now
 
-                # Sleepy detection (inline)
+                # Sleepy state check
                 if self.focus_enabled:
                     try:
                         eye_closed = check_sleepy(frame)
@@ -312,27 +309,36 @@ class AppController:
                     except Exception as e:
                         self.log(f"[ERROR] Sleepy detection: {e}")
 
-                # Sleepy pause active? Skip heavy detection
+                # Skip computation during alert cooldown
                 if time.time() < self.sleepy_pause_until:
                     self.sleepy_mode = True
                     self.window_start_time = time.time()
                     continue
 
-                # Preprocess frame for heavy models
+                # Preprocess for inference
                 proc_frame = cv2.resize(frame, (224, 224))
                 proc_frame = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
 
-                # Submit heavy detectors asynchronously
-                futures = {}
-                futures['emotion'] = self.executor.submit(self._run_emotion, proc_frame)
-                if self.hand_enabled:
-                    futures['hand'] = self.executor.submit(self._run_hand, proc_frame)
+                emotion_result = []
+                hand_result = []
 
-                wait(list(futures.values()))
+                # --- Sequential Execution Starts Here ---
+                # Run emotion model first
+                try:
+                    with torch.inference_mode(), torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+                        emotion_result = get_emotion(proc_frame)
+                except Exception as e:
+                    self.log(f"[ERROR] Emotion detection: {e}")
 
-                emotion_result = futures['emotion'].result() or []
-                hand_result = futures['hand'].result() if 'hand' in futures else []
+                # Only run hand detection if emotion not found
+                if not emotion_result:
+                    try:
+                        with torch.inference_mode(), torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+                            hand_result = detect_hand(proc_frame)
+                    except Exception as e:
+                        self.log(f"[ERROR] Hand detection: {e}")
 
+                # Log detections
                 if emotion_result:
                     self.emotion_log.extend(emotion_result)
                     self.emotion_counter.update(emotion_result)
@@ -343,8 +349,9 @@ class AppController:
                     self.hand_counter.update(hand_result)
                     self.log(f"[Hand Detection] Detected: {hand_result}")
 
-                # Trigger agent workflow periodically
-                if now - self.window_start_time >= self.notify_time and not self.agent_mode and len(self.emotion_log) > 0:
+                # Trigger periodic agent workflow
+                if (now - self.window_start_time >= self.notify_time and 
+                    not self.agent_mode and len(self.emotion_log) > 0):
                     self.agent_mode = True
                     threading.Thread(target=self.run_agent_workflow, daemon=True).start()
 
@@ -352,6 +359,103 @@ class AppController:
             self.reader_thread.stop()
             self.executor.shutdown(wait=False)
             self.log("[INFO] AppController stopped.")
+
+
+    # Parallel running
+    # def run(self):
+    #     self.log(f"[INFO] GPU Available: {torch.cuda.is_available()}")
+
+    #     self._warmup_models()
+
+    #     try:
+    #         while self.running:
+    #             try:
+    #                 frame = self.frame_queue.get(timeout=1)
+    #             except Empty:
+    #                 continue
+
+    #             now = time.time()
+
+    #             if frame is None or frame.size == 0:
+    #                 self.log("[WARN] Empty frame.")
+    #                 time.sleep(0.01)
+    #                 continue
+
+    #             if self.agent_mode:
+    #                 time.sleep(0.01)
+    #                 continue
+
+    #             # Human detection
+    #             try:
+    #                 detected = human_present(frame)
+    #             except Exception as e:
+    #                 self.log(f"[ERROR] Human detection: {e}")
+    #                 continue
+
+    #             if not detected:
+    #                 if now - self.last_seen >= self.focus_time:
+    #                     self.log(f"[WARN] No human detected for {self.focus_time}s.")
+    #                 time.sleep(0.01)
+    #                 continue
+
+    #             self.last_seen = now
+
+    #             # Sleepy detection (inline)
+    #             if self.focus_enabled:
+    #                 try:
+    #                     eye_closed = check_sleepy(frame)
+    #                     if eye_closed:
+    #                         if self.eye_closed_since is None:
+    #                             self.eye_closed_since = now
+    #                         elif (now - self.eye_closed_since >= self.focus_time) and not self.alert_triggered:
+    #                             self.alert_triggered = True
+    #                             self.buzzer_and_notify()
+    #                     else:
+    #                         self.eye_closed_since = None
+    #                         self.alert_triggered = False
+    #                 except Exception as e:
+    #                     self.log(f"[ERROR] Sleepy detection: {e}")
+
+    #             # Sleepy pause active? Skip heavy detection
+    #             if time.time() < self.sleepy_pause_until:
+    #                 self.sleepy_mode = True
+    #                 self.window_start_time = time.time()
+    #                 continue
+
+    #             # Preprocess frame for heavy models
+    #             proc_frame = cv2.resize(frame, (224, 224))
+    #             proc_frame = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
+
+    #             # Submit heavy detectors asynchronously
+    #             futures = {}
+    #             futures['emotion'] = self.executor.submit(self._run_emotion, proc_frame)
+    #             if self.hand_enabled:
+    #                 futures['hand'] = self.executor.submit(self._run_hand, proc_frame)
+
+    #             wait(list(futures.values()))
+
+    #             emotion_result = futures['emotion'].result() or []
+    #             hand_result = futures['hand'].result() if 'hand' in futures else []
+
+    #             if emotion_result:
+    #                 self.emotion_log.extend(emotion_result)
+    #                 self.emotion_counter.update(emotion_result)
+    #                 self.log(f"[Emotion Detection] Detected: {emotion_result}")
+
+    #             if hand_result:
+    #                 self.hand_log.extend(hand_result)
+    #                 self.hand_counter.update(hand_result)
+    #                 self.log(f"[Hand Detection] Detected: {hand_result}")
+
+    #             # Trigger agent workflow periodically
+    #             if now - self.window_start_time >= self.notify_time and not self.agent_mode and len(self.emotion_log) > 0:
+    #                 self.agent_mode = True
+    #                 threading.Thread(target=self.run_agent_workflow, daemon=True).start()
+
+    #     finally:
+    #         self.reader_thread.stop()
+    #         self.executor.shutdown(wait=False)
+    #         self.log("[INFO] AppController stopped.")
 
 
 
