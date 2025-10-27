@@ -39,7 +39,7 @@ from winotify import Notification, audio
 
 from core.human_detector import human_present
 from core.emotion_detector import get_emotion
-from core.sleepy_detector import check_sleepy
+# from core.sleepy_detector import check_sleepy
 from core.hand_movement import detect_hand
 from core.agent_system import run_agent_system
 from core.voice_assistant import VoiceAssistant
@@ -88,11 +88,11 @@ class AppController:
         self.need_focus_mode = get_app_setting("focusDetection", 1)
         self.need_hand_mode = get_app_setting("handDetection", 1)
         self.last_seen = time.time()
-        self.eye_closed_since = None
-        self.alert_triggered = False
-        self.sleepy_mode = False
+        # self.eye_closed_since = None
+        # self.alert_triggered = False
+        # self.sleepy_mode = False
         self.agent_mode = False
-        self.sleepy_pause_until = 0
+        # self.sleepy_pause_until = 0
 
         self.data_buffer = deque(maxlen=120)
         self.emotion_log = []
@@ -136,38 +136,39 @@ class AppController:
         self.executor.shutdown(wait=False)
         
 
-    def _notify_async(self):
-        def _do_notify():
-            try:
-                icon_path = os.path.join(
-                    os.path.dirname(__file__), "..", "assets", "res", "Icon.ico"
-                )
-                icon_path = os.path.abspath(icon_path) if os.path.exists(icon_path) else None
+    # def _notify_async(self):
+    #     def _do_notify():
+    #         try:
+    #             icon_path = os.path.join(
+    #                 os.path.dirname(__file__), "..", "assets", "res", "Icon.ico"
+    #             )
+    #             icon_path = os.path.abspath(icon_path) if os.path.exists(icon_path) else None
 
-                toast = Notification(
-                    app_id="EMOFI",
-                    title="Focus Alert",
-                    msg="You are not focused!",
-                    icon=icon_path
-                )
-                toast.set_audio(audio.Mail, loop=True)
-                toast.show()
-            except Exception as e:
-                self.log(f"[ERROR] Notification failed: {e}")
-            try:
-                winsound.MessageBeep()
-            except Exception:
-                pass
+    #             toast = Notification(
+    #                 app_id="EMOFI",
+    #                 title="Focus Alert",
+    #                 msg="You are not focused!",
+    #                 icon=icon_path
+    #             )
+    #             toast.set_audio(audio.Mail, loop=True)
+    #             toast.show()
+    #         except Exception as e:
+    #             self.log(f"[ERROR] Notification failed: {e}")
+    #         try:
+    #             winsound.MessageBeep()
+    #         except Exception:
+    #             pass
 
-        threading.Thread(target=_do_notify, daemon=True).start()
+    #     threading.Thread(target=_do_notify, daemon=True).start()
 
-    def buzzer_and_notify(self):
-        self.sleepy_mode = False
-        self.eye_closed_since = None
-        self.alert_triggered = False
-        self.sleepy_pause_until = time.time() + 5
-        self.data_buffer.clear()
-        self._notify_async()
+    # def buzzer_and_notify(self):
+    #     self.sleepy_mode = False
+    #     self.eye_closed_since = None
+    #     self.alert_triggered = False
+    #     self.sleepy_pause_until = time.time() + 5
+    #     self.data_buffer.clear()
+    #     self._notify_async()
+
 
     def _warmup_models(self):
         if self._warmed:
@@ -294,26 +295,26 @@ class AppController:
                 self.last_seen = now
 
                 # Sleepy state check
-                if self.focus_enabled:
-                    try:
-                        eye_closed = check_sleepy(frame)
-                        if eye_closed:
-                            if self.eye_closed_since is None:
-                                self.eye_closed_since = now
-                            elif (now - self.eye_closed_since >= self.focus_time) and not self.alert_triggered:
-                                self.alert_triggered = True
-                                self.buzzer_and_notify()
-                        else:
-                            self.eye_closed_since = None
-                            self.alert_triggered = False
-                    except Exception as e:
-                        self.log(f"[ERROR] Sleepy detection: {e}")
+                # if self.focus_enabled:
+                #     try:
+                #         eye_closed = check_sleepy(frame)
+                #         if eye_closed:
+                #             if self.eye_closed_since is None:
+                #                 self.eye_closed_since = now
+                #             elif (now - self.eye_closed_since >= self.focus_time) and not self.alert_triggered:
+                #                 self.alert_triggered = True
+                #                 self.buzzer_and_notify()
+                #         else:
+                #             self.eye_closed_since = None
+                #             self.alert_triggered = False
+                #     except Exception as e:
+                #         self.log(f"[ERROR] Sleepy detection: {e}")
 
-                # Skip computation during alert cooldown
-                if time.time() < self.sleepy_pause_until:
-                    self.sleepy_mode = True
-                    self.window_start_time = time.time()
-                    continue
+                # # Skip computation during alert cooldown
+                # if time.time() < self.sleepy_pause_until:
+                #     self.sleepy_mode = True
+                #     self.window_start_time = time.time()
+                #     continue
 
                 # Preprocess for inference
                 proc_frame = cv2.resize(frame, (224, 224))
@@ -400,27 +401,27 @@ class AppController:
 
     #             self.last_seen = now
 
-    #             # Sleepy detection (inline)
-    #             if self.focus_enabled:
-    #                 try:
-    #                     eye_closed = check_sleepy(frame)
-    #                     if eye_closed:
-    #                         if self.eye_closed_since is None:
-    #                             self.eye_closed_since = now
-    #                         elif (now - self.eye_closed_since >= self.focus_time) and not self.alert_triggered:
-    #                             self.alert_triggered = True
-    #                             self.buzzer_and_notify()
-    #                     else:
-    #                         self.eye_closed_since = None
-    #                         self.alert_triggered = False
-    #                 except Exception as e:
-    #                     self.log(f"[ERROR] Sleepy detection: {e}")
+    #             # # Sleepy detection (inline)
+    #             # if self.focus_enabled:
+    #             #     try:
+    #             #         eye_closed = check_sleepy(frame)
+    #             #         if eye_closed:
+    #             #             if self.eye_closed_since is None:
+    #             #                 self.eye_closed_since = now
+    #             #             elif (now - self.eye_closed_since >= self.focus_time) and not self.alert_triggered:
+    #             #                 self.alert_triggered = True
+    #             #                 self.buzzer_and_notify()
+    #             #         else:
+    #             #             self.eye_closed_since = None
+    #             #             self.alert_triggered = False
+    #             #     except Exception as e:
+    #             #         self.log(f"[ERROR] Sleepy detection: {e}")
 
-    #             # Sleepy pause active? Skip heavy detection
-    #             if time.time() < self.sleepy_pause_until:
-    #                 self.sleepy_mode = True
-    #                 self.window_start_time = time.time()
-    #                 continue
+    #             # # Sleepy pause active? Skip heavy detection
+    #             # if time.time() < self.sleepy_pause_until:
+    #             #     self.sleepy_mode = True
+    #             #     self.window_start_time = time.time()
+    #             #     continue
 
     #             # Preprocess frame for heavy models
     #             proc_frame = cv2.resize(frame, (224, 224))
